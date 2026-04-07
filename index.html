@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DevConf 2026</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #ffffff;
+      --bg-secondary: #f5f5f3;
+      --text: #1a1a1a;
+      --text-secondary: #6b6b6b;
+      --text-tertiary: #9b9b9b;
+      --border: rgba(0,0,0,0.12);
+      --border-mid: rgba(0,0,0,0.2);
+      --radius-md: 8px;
+      --radius-lg: 12px;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1c1c1e;
+        --bg-secondary: #2c2c2e;
+        --text: #f0f0f0;
+        --text-secondary: #a0a0a0;
+        --text-tertiary: #6b6b6b;
+        --border: rgba(255,255,255,0.12);
+        --border-mid: rgba(255,255,255,0.2);
+      }
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      background: var(--bg-secondary);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 0;
+    }
+
+    .app-wrap {
+      width: 100%;
+      max-width: 480px;
+      background: var(--bg);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    .app-header {
+      padding: 1rem 1.25rem 0.75rem;
+      border-bottom: 0.5px solid var(--border);
+    }
+    .app-header h1 { font-size: 20px; font-weight: 600; margin-bottom: 2px; }
+    .app-header p  { font-size: 13px; color: var(--text-secondary); }
+
+    /* ── Tab bar ── */
+    .tab-bar { display: flex; border-bottom: 0.5px solid var(--border); }
+    .tab {
+      flex: 1; padding: 11px; text-align: center;
+      font-size: 14px; font-weight: 500; cursor: pointer;
+      color: var(--text-secondary);
+      border: none; border-bottom: 2px solid transparent;
+      background: none; font-family: inherit;
+      transition: color 0.15s;
+    }
+    .tab.active { color: var(--text); border-bottom-color: var(--text); }
+    .notif-count {
+      font-size: 11px; background: #7F77DD; color: white;
+      border-radius: 10px; padding: 1px 6px; margin-left: 4px;
+      display: none;
+    }
+
+    /* ── Panels ── */
+    .panel { display: none; flex: 1; }
+    .panel.active { display: block; }
+
+    /* ── Notification banner ── */
+    .notif-bar {
+      margin: 10px 1.25rem 0;
+      padding: 9px 12px;
+      background: #EEEDFE; border: 0.5px solid #AFA9EC;
+      border-radius: var(--radius-md);
+      display: none; align-items: center; gap: 8px;
+    }
+    .notif-bar.show { display: flex; }
+    .notif-bar span { font-size: 13px; color: #3C3489; flex: 1; }
+    .notif-bar button {
+      font-size: 12px; color: #534AB7;
+      background: none; border: none; cursor: pointer; font-family: inherit;
+    }
+
+    /* ── Filters ── */
+    .filters {
+      display: flex; gap: 6px;
+      padding: 10px 1.25rem;
+      overflow-x: auto;
+    }
+    .filters::-webkit-scrollbar { display: none; }
+    .filter-btn {
+      flex-shrink: 0; font-size: 12px; padding: 5px 12px;
+      border-radius: 20px; border: 0.5px solid var(--border-mid);
+      background: none; cursor: pointer; color: var(--text-secondary);
+      font-family: inherit; transition: all 0.15s;
+    }
+    .filter-btn.active {
+      background: var(--text); color: var(--bg);
+      border-color: var(--text);
+    }
+
+    /* ── Event list ── */
+    .event-list { padding: 0 1.25rem 1.5rem; }
+    .time-group  { margin-bottom: 1rem; }
+    .time-label  {
+      font-size: 11px; font-weight: 600; color: var(--text-tertiary);
+      letter-spacing: 0.07em; text-transform: uppercase; padding: 8px 0 5px;
+    }
+
+    /* ── Event card ── */
+    .event-card {
+      background: var(--bg);
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 13px; margin-bottom: 8px;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .event-card.notified { border-color: #7F77DD; background: #EEEDFE; }
+    .event-top  { display: flex; align-items: flex-start; gap: 10px; }
+    .event-main { flex: 1; min-width: 0; }
+    .event-title {
+      font-size: 14px; font-weight: 500; line-height: 1.35;
+      color: var(--text); margin-bottom: 4px;
+    }
+    .event-card.notified .event-title { color: #3C3489; }
+    .event-meta { font-size: 12px; color: var(--text-secondary); }
+    .event-card.notified .event-meta { color: #534AB7; }
+    .event-actions { display: flex; align-items: center; gap: 7px; flex-shrink: 0; }
+
+    /* ── Badges ── */
+    .badge { font-size: 11px; padding: 2px 9px; border-radius: 10px; font-weight: 500; }
+    .badge-talk     { background: #EEEDFE; color: #3C3489; }
+    .badge-workshop { background: #E1F5EE; color: #085041; }
+    .badge-social   { background: #FAECE7; color: #712B13; }
+    .badge-expo     { background: #FAEEDA; color: #633806; }
+
+    /* ── Bell button ── */
+    .bell-btn {
+      width: 30px; height: 30px; border-radius: 50%;
+      border: 0.5px solid var(--border-mid);
+      background: var(--bg);
+      cursor: pointer; display: flex; align-items: center;
+      justify-content: center; flex-shrink: 0;
+      transition: background 0.15s, border-color 0.15s;
+      padding: 0;
+    }
+    .bell-btn:hover { background: var(--bg-secondary); }
+    .bell-btn.on { background: #7F77DD; border-color: #7F77DD; }
+    .bell-btn svg { width: 15px; height: 15px; }
+
+    /* ── Map ── */
+    .map-wrap { padding: 1rem 1.25rem 1.5rem; }
+    #leaflet-map {
+      width: 100%; height: 380px;
+      border-radius: var(--radius-lg);
+      border: 0.5px solid var(--border);
+      overflow: hidden;
+      z-index: 0;
+    }
+    .map-legend { display: flex; flex-wrap: wrap; gap: 10px; padding: 10px 0 0; }
+    .legend-item { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-secondary); }
+    .legend-dot  { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+
+    /* ── Empty state ── */
+    .empty {
+      text-align: center; padding: 3rem 1rem;
+      color: var(--text-secondary); font-size: 14px; line-height: 1.6;
+    }
+
+    @media (min-width: 500px) {
+      body { padding: 2rem 1rem; align-items: flex-start; }
+      .app-wrap { border-radius: 16px; min-height: auto; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
+    }
+  </style>
+</head>
+<body>
+<div class="app-wrap">
+
+  <div class="app-header">
+    <h1>DevConf 2026</h1>
+    <p>April 12–13 &nbsp;·&nbsp; University High School, Irvine CA</p>
+  </div>
+
+  <div class="tab-bar">
+    <button class="tab active" onclick="switchTab('schedule', this)">Schedule</button>
+    <button class="tab" onclick="switchTab('map', this)">Map</button>
+    <button class="tab" onclick="switchTab('saved', this)">
+      Saved <span class="notif-count" id="saved-count"></span>
+    </button>
+  </div>
+
+  <!-- Schedule -->
+  <div id="panel-schedule" class="panel active">
+    <div class="notif-bar" id="notif-bar">
+      <span id="notif-msg"></span>
+      <button onclick="dismissNotifBar()">Dismiss</button>
+    </div>
+    <div class="filters" id="filter-bar"></div>
+    <div class="event-list" id="event-list"></div>
+  </div>
+
+  <!-- Map -->
+  <div id="panel-map" class="panel">
+    <div class="map-wrap">
+      <div id="leaflet-map"></div>
+      <div class="map-legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#7F77DD"></div>Talks</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#1D9E75"></div>Workshops</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#D85A30"></div>Social</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#BA7517"></div>Expo</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Saved -->
+  <div id="panel-saved" class="panel">
+    <div class="event-list" id="saved-list" style="padding-top: 0.75rem;"></div>
+  </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+
+  // ─────────────────────────────────────────
+  //  DATA — edit this to update your schedule
+  // ─────────────────────────────────────────
+  const events = [
+    { id:1,  time:"9:00 AM",  title:"Opening Keynote",                   room:"Main Gymnasium",   type:"talk",     lat:33.6510, lng:-117.8246 },
+    { id:2,  time:"9:00 AM",  title:"Hands-On: Kubernetes for Everyone",  room:"Library",          type:"workshop", lat:33.6516, lng:-117.8238 },
+    { id:3,  time:"10:30 AM", title:"Building AI-Powered APIs",           room:"Lecture Hall 100", type:"talk",     lat:33.6507, lng:-117.8242 },
+    { id:4,  time:"10:30 AM", title:"Intro to Rust Workshop",             room:"Computer Lab",     type:"workshop", lat:33.6514, lng:-117.8250 },
+    { id:5,  time:"12:00 PM", title:"Lunch & Networking",                 room:"Quad / Courtyard", type:"social",   lat:33.6513, lng:-117.8244 },
+    { id:6,  time:"1:30 PM",  title:"The Future of Edge Computing",       room:"Main Gymnasium",   type:"talk",     lat:33.6510, lng:-117.8246 },
+    { id:7,  time:"1:30 PM",  title:"Sponsor Expo Open",                  room:"Front Lawn",       type:"expo",     lat:33.6519, lng:-117.8243 },
+    { id:8,  time:"3:00 PM",  title:"Design Systems at Scale",            room:"Lecture Hall 100", type:"talk",     lat:33.6507, lng:-117.8242 },
+    { id:9,  time:"3:00 PM",  title:"Live Coding: Web Performance",       room:"Library",          type:"workshop", lat:33.6516, lng:-117.8238 },
+    { id:10, time:"5:00 PM",  title:"After-Party & Awards",               room:"Quad / Courtyard", type:"social",   lat:33.6513, lng:-117.8244 },
+  ];
+
+  // ─────────────────────────────────────────
+  //  CONFIG
+  // ─────────────────────────────────────────
+  const MAP_CENTER  = [33.6513, -117.8242];
+  const MAP_ZOOM    = 17;
+  const typeColors  = { talk:"#7F77DD", workshop:"#1D9E75", social:"#D85A30", expo:"#BA7517" };
+  const typeLabel   = { talk:"Talk", workshop:"Workshop", social:"Social", expo:"Expo" };
+  const REMIND_MINS = 15;
+
+  // ─────────────────────────────────────────
+  //  STATE
+  // ─────────────────────────────────────────
+  let activeFilter = "all";
+  let notified     = new Set(JSON.parse(localStorage.getItem("notified") || "[]"));
+  let notifTimeout = null;
+  let leafletMap   = null;
+
+  function saveNotified() {
+    localStorage.setItem("notified", JSON.stringify([...notified]));
+  }
+
+  // ─────────────────────────────────────────
+  //  HELPERS
+  // ─────────────────────────────────────────
+  function groupBy(arr, key) {
+    return arr.reduce((g, e) => { (g[e[key]] = g[e[key]] || []).push(e); return g; }, {});
+  }
+
+  function bellSVG(on) {
+    const fill = on ? "white" : "#888";
+    return `<svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M8 1.5A4.5 4.5 0 0 0 3.5 6v2.5l-1 1.5h11l-1-1.5V6A4.5 4.5 0 0 0 8 1.5zM6.5 13a1.5 1.5 0 0 0 3 0H6.5z" fill="${fill}"/>
+    </svg>`;
+  }
+
+  // ─────────────────────────────────────────
+  //  NOTIFICATIONS
+  // ─────────────────────────────────────────
+  function toggleNotif(id, ev) {
+    ev && ev.stopPropagation();
+    const e = events.find(x => x.id === id);
+    if (notified.has(id)) {
+      notified.delete(id);
+      showNotifBar(`Reminder removed for "${e.title}"`);
+    } else {
+      notified.add(id);
+      showNotifBar(`You'll be reminded ${REMIND_MINS} min before "${e.title}"`);
+      requestBrowserNotifPermission();
+    }
+    saveNotified();
+    updateSavedCount();
+    renderSchedule();
+    renderSaved();
+  }
+
+  function requestBrowserNotifPermission() {
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+  }
+
+  function showNotifBar(msg) {
+    const bar = document.getElementById("notif-bar");
+    document.getElementById("notif-msg").textContent = msg;
+    bar.classList.add("show");
+    clearTimeout(notifTimeout);
+    notifTimeout = setTimeout(() => bar.classList.remove("show"), 3500);
+  }
+
+  function dismissNotifBar() {
+    document.getElementById("notif-bar").classList.remove("show");
+  }
+
+  function updateSavedCount() {
+    const el = document.getElementById("saved-count");
+    if (notified.size > 0) { el.textContent = notified.size; el.style.display = "inline"; }
+    else el.style.display = "none";
+  }
+
+  // ─────────────────────────────────────────
+  //  RENDER
+  // ─────────────────────────────────────────
+  function eventCardHTML(e) {
+    const isOn = notified.has(e.id);
+    return `<div class="event-card${isOn ? " notified" : ""}">
+      <div class="event-top">
+        <div class="event-main">
+          <div class="event-title">${e.title}</div>
+          <div class="event-meta">${e.time} &nbsp;·&nbsp; ${e.room}</div>
+        </div>
+        <div class="event-actions">
+          <span class="badge badge-${e.type}">${typeLabel[e.type]}</span>
+          <button class="bell-btn${isOn ? " on" : ""}"
+            onclick="toggleNotif(${e.id}, event)"
+            aria-label="${isOn ? "Remove reminder" : "Set reminder"}">
+            ${bellSVG(isOn)}
+          </button>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  function renderSchedule() {
+    const filtered = activeFilter === "all" ? events : events.filter(e => e.type === activeFilter);
+    const grouped  = groupBy(filtered, "time");
+    const list     = document.getElementById("event-list");
+    if (!filtered.length) {
+      list.innerHTML = '<div class="empty">No events match this filter.</div>';
+      return;
+    }
+    list.innerHTML = Object.entries(grouped).map(([time, evts]) =>
+      `<div class="time-group">
+        <div class="time-label">${time}</div>
+        ${evts.map(eventCardHTML).join("")}
+      </div>`
+    ).join("");
+  }
+
+  function renderSaved() {
+    const list  = document.getElementById("saved-list");
+    const saved = events.filter(e => notified.has(e.id));
+    list.innerHTML = saved.length
+      ? saved.map(eventCardHTML).join("")
+      : '<div class="empty">No saved sessions yet.<br>Tap the bell on any session to save it.</div>';
+  }
+
+  function renderFilters() {
+    const filters = [["all","All"],["talk","Talks"],["workshop","Workshops"],["social","Social"],["expo","Expo"]];
+    document.getElementById("filter-bar").innerHTML = filters.map(([v, l]) =>
+      `<button class="filter-btn${v === activeFilter ? " active" : ""}" onclick="setFilter('${v}')">${l}</button>`
+    ).join("");
+  }
+
+  function setFilter(f) { activeFilter = f; renderFilters(); renderSchedule(); }
+
+  // ─────────────────────────────────────────
+  //  MAP
+  // ─────────────────────────────────────────
+  function initMap() {
+    if (leafletMap) { leafletMap.invalidateSize(); return; }
+
+    leafletMap = L.map("leaflet-map").setView(MAP_CENTER, MAP_ZOOM);
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(leafletMap);
+
+    const uniqueVenues = [...new Map(events.map(e => [e.room, e])).values()];
+
+    uniqueVenues.forEach(e => {
+      const color = typeColors[e.type];
+      const count = events.filter(ev => ev.room === e.room).length;
+      const icon  = L.divIcon({
+        className: "",
+        html: `<div style="
+          width:16px; height:16px; border-radius:50%;
+          background:${color}; border:2.5px solid white;
+          box-shadow:0 1px 4px rgba(0,0,0,.3);">
+        </div>`,
+        iconSize: [16, 16], iconAnchor: [8, 8], popupAnchor: [0, -12]
+      });
+
+      L.marker([e.lat, e.lng], { icon })
+        .addTo(leafletMap)
+        .bindPopup(`
+          <b style="font-size:13px;">${e.room}</b><br>
+          <span style="font-size:12px;color:#666;">
+            ${typeLabel[e.type]} &nbsp;·&nbsp; ${count} session${count > 1 ? "s" : ""}
+          </span>`);
+    });
+
+    setTimeout(() => leafletMap.invalidateSize(), 200);
+  }
+
+  // ─────────────────────────────────────────
+  //  TAB SWITCHING
+  // ─────────────────────────────────────────
+  function switchTab(tab, btn) {
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("panel-" + tab).classList.add("active");
+    if (tab === "map")   setTimeout(initMap, 80);
+    if (tab === "saved") renderSaved();
+  }
+
+  // ─────────────────────────────────────────
+  //  INIT
+  // ─────────────────────────────────────────
+  updateSavedCount();
+  renderFilters();
+  renderSchedule();
+
+</script>
+</body>
+</html>
